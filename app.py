@@ -14,7 +14,12 @@ ANTHROPIC_KEY   = os.environ.get("ANTHROPIC_API_KEY")
 SOURCE_API_KEY  = os.environ.get("SOURCE_KLAVIYO_API_KEY")
 SOURCE_COUNTRY  = os.environ.get("SOURCE_COUNTRY", "DK")
 SOURCE_LANGUAGE = os.environ.get("SOURCE_LANGUAGE", "Danish")
-ACCOUNTS        = json.loads(os.environ.get("ACCOUNTS_JSON", "[]"))
+try:
+    ACCOUNTS = json.loads(os.environ.get("ACCOUNTS_JSON", "[]"))
+except Exception:
+    ACCOUNTS = []
+
+
 
 KLAVIYO_REV = "2024-10-15"
 
