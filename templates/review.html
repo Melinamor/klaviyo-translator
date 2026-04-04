@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gennemgang — Klaviyo Oversætter</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0f1117; --surface: #1a1d27; --border: #2a2d3a;
+      --accent: #6c63ff; --accent2: #a78bfa; --text: #e2e8f0; --muted: #64748b;
+      --success: #22c55e; --error: #ef4444; --warn: #f59e0b;
+    }
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      min-height: 100vh; display: flex; flex-direction: column;
+    }
+    header {
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      padding: 16px 32px; display: flex; justify-content: space-between; align-items: center;
+    }
+    .header-left {
+      display: flex; gap: 20px; align-items: center;
+    }
+    .logo { font-size: 0.95rem; font-weight: 600; color: var(--accent2); }
+    .logo span { color: var(--muted); font-weight: 400; }
+    .template-name { font-size: 0.85rem; color: var(--muted); }
+    .breadcrumb { display: flex; gap: 8px; align-items: center; }
+    .step-chip {
+      font-size: 0.75rem; padding: 6px 12px; border-radius: 20px;
+      background: var(--border); color: var(--text); font-weight: 500;
+      transition: all 0.2s;
+    }
+    .step-chip.active { background: var(--accent); color: #fff; }
+    .step-chip.done { background: var(--success); color: #fff; }
+    .step-chip::before { content: attr(data-num); font-weight: 700; margin-right: 4px; }
+    .logout { color: var(--muted); text-decoration: none; font-size: 0.85rem; }
+    .logout:hover { color: var(--text); }
+
+    main {
+      flex: 1; display: flex; justify-content: center; align-items: flex-start;
+      padding: 40px 20px 120px; overflow-y: auto;
+    }
+    .step-container { width: 100%; max-width: 720px; }
+    .step { display: none; }
+    .step.active { display: block; animation: slideIn 0.3s ease; }
+    @keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* Step 0: Loading */
+    .spinner {
+      width: 40px; height: 40px; border: 3px solid var(--border);
+      border-top-color: var(--accent); border-radius: 50%;
+      animation: spin 0.8s linear infinite; margin: 0 auto 20px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-log {
+      background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+      padding: 16px; max-height: 300px; overflow-y: auto; font-size: 0.8rem;
+      font-family: monospace; line-height: 1.6;
+    }
+    .log-line { margin: 4px 0; }
+    .log-progress { color: var(--text); }
+    .log-warning { color: var(--warn); }
+    .log-error { color: var(--error); }
+    .log-success { color: var(--success); }
+    .log-done { color: var(--accent2); font-weight: 600; }
+
+    /* Step panels */
+    .step h2 { font-size: 1.3rem; margin-bottom: 4px; }
+    .step-subtitle { color: var(--muted); font-size: 0.9rem; margin-bottom: 24px; }
+    .item-header {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 20px;
+    }
+    .item-counter { font-size: 0.8rem; background: var(--border); padding: 4px 10px;
+                    border-radius: 16px; color: var(--muted); }
+
+    /* Images grid */
+    .images-grid { display: flex; flex-direction: column; gap: 16px; }
+    .image-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+      padding: 16px; display: flex; gap: 16px; align-items: flex-start;
+    }
+    .image-thumb { width: 80px; height: 80px; border-radius: 8px; object-fit: cover;
+                   background: var(--bg); border: 1px solid var(--border); flex-shrink: 0; }
+    .image-info { flex: 1; }
+    .image-src { font-size: 0.8rem; font-family: monospace; color: var(--muted); word-break: break-all; }
+    .image-alt { color: var(--muted); font-size: 0.85rem; margin-top: 4px; }
+    .image-toggle { margin-left: auto; }
+    .upload-zone {
+      margin-top: 12px; border: 2px dashed var(--border); border-radius: 8px; padding: 24px;
+      text-align: center; cursor: pointer; transition: all 0.2s; background: rgba(108, 99, 255, 0.02);
+    }
+    .upload-zone:hover { border-color: var(--accent); background: rgba(108, 99, 255, 0.08); }
+    .upload-zone.dragover { border-color: var(--accent); background: rgba(108, 99, 255, 0.12); }
+    .upload-hint { color: var(--muted); font-size: 0.8rem; }
+    .country-chips {
+      display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px;
+    }
+    .country-chip {
+      font-size: 0.75rem; padding: 6px 10px; border-radius: 16px;
+      background: var(--border); color: var(--muted); display: flex; gap: 4px; align-items: center;
+    }
+    .country-chip.done { background: var(--success); color: #fff; }
+    .country-chip.error { background: var(--error); color: #fff; }
+
+    /* Review items (alts, links, numbers) */
+    .review-item {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+      padding: 24px;
+    }
+    .review-item-title { font-weight: 600; font-size: 0.95rem; margin-bottom: 16px; }
+    .review-item-original { color: var(--muted); font-size: 0.85rem; margin-bottom: 12px;
+                             padding: 10px; background: var(--bg); border-radius: 6px; }
+    .review-rows { display: flex; flex-direction: column; gap: 10px; }
+    .review-row {
+      display: flex; gap: 12px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border);
+    }
+    .review-row:last-child { border-bottom: none; }
+    .review-label {
+      display: flex; align-items: center; gap: 6px; min-width: 100px; font-size: 0.85rem;
+    }
+    .review-flag { font-size: 1rem; }
+    .review-input {
+      flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+      padding: 8px 12px; color: var(--text); font-size: 0.85rem; outline: none;
+      transition: border-color 0.2s;
+    }
+    .review-input:focus { border-color: var(--accent); }
+    .review-badge {
+      font-size: 0.7rem; padding: 3px 6px; border-radius: 4px;
+      background: rgba(34, 197, 94, 0.2); color: var(--success);
+    }
+
+    /* Summary */
+    .summary-list { list-style: none; margin-bottom: 32px; }
+    .summary-item {
+      padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 0.9rem;
+      display: flex; gap: 8px;
+    }
+    .summary-item::before { content: "✓"; color: var(--success); font-weight: 600; }
+    .finalize-log { margin-top: 20px; }
+
+    /* Checkboxes */
+    input[type="checkbox"] {
+      width: 18px; height: 18px; cursor: pointer; accent-color: var(--accent);
+    }
+
+    /* Bottom nav */
+    nav {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      background: var(--surface); border-top: 1px solid var(--border);
+      padding: 16px 32px; display: flex; justify-content: space-between; align-items: center;
+    }
+    button {
+      padding: 10px 20px; border-radius: 6px; border: none; font-weight: 600; cursor: pointer;
+      font-size: 0.9rem; transition: all 0.2s;
+    }
+    button.primary { background: var(--accent); color: #fff; }
+    button.primary:hover { background: #5b52e0; }
+    button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    button.secondary { background: var(--border); color: var(--text); }
+    button.secondary:hover { background: #353b49; }
+    button.secondary:disabled { opacity: 0.3; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <div class="logo">Klaviyo <span>Oversætter</span></div>
+    <div class="template-name">{{ template_name }}</div>
+  </div>
+  <div class="breadcrumb" id="breadcrumb"></div>
+  <a href="/" class="logout">← Tilbage</a>
+</header>
+
+<main>
+  <div class="step-container">
+    <!-- Step 0: Loading -->
+    <div id="step-0" class="step active">
+      <div class="spinner"></div>
+      <h2>Henter og oversætter…</h2>
+      <div class="loading-log" id="loading-log"></div>
+    </div>
+
+    <!-- Step 1: Images -->
+    <div id="step-1" class="step">
+      <h2>Billeder</h2>
+      <p class="step-subtitle">Markér billeder der skal udskiftes med lokale versioner</p>
+      <div class="images-grid" id="images-grid"></div>
+    </div>
+
+    <!-- Step 2: Alt texts -->
+    <div id="step-2" class="step">
+      <div class="item-header">
+        <div>
+          <h2>Alt tekster</h2>
+          <p class="step-subtitle">Billede <span id="alt-idx">1</span> / <span id="alt-count">0</span></p>
+        </div>
+      </div>
+      <div class="review-item" id="alt-container"></div>
+      <div class="review-rows" style="margin-top: 12px;">
+        <button onclick="S.goAltAll()" class="secondary" style="width: auto;">Godkend alle forslag</button>
+      </div>
+    </div>
+
+    <!-- Step 3: Links -->
+    <div id="step-3" class="step">
+      <div class="item-header">
+        <div>
+          <h2>Links</h2>
+          <p class="step-subtitle">Link <span id="link-idx">1</span> / <span id="link-count">0</span></p>
+        </div>
+      </div>
+      <div class="review-item" id="link-container"></div>
+    </div>
+
+    <!-- Step 4: Numbers -->
+    <div id="step-4" class="step">
+      <div class="item-header">
+        <div>
+          <h2>Tal & Priser</h2>
+          <p class="step-subtitle">Værdi <span id="num-idx">1</span> / <span id="num-count">0</span></p>
+        </div>
+      </div>
+      <div class="review-item" id="num-container"></div>
+    </div>
+
+    <!-- Step 5: Finalize -->
+    <div id="step-5" class="step">
+      <h2>Klar til oprettelse</h2>
+      <p class="step-subtitle">Gennemgangen er færdig. Klik for at oprette alle templates.</p>
+      <ul class="summary-list" id="summary-list"></ul>
+      <button id="create-btn" onclick="S.startFinalize()" class="primary" style="width: 100%; padding: 14px;">
+        Opret alle templates →
+      </button>
+      <div class="finalize-log" id="finalize-log"></div>
+    </div>
+  </div>
+</main>
+
+<nav>
+  <button id="back-btn" onclick="S.goBack()" class="secondary" style="display: none;">← Tilbage</button>
+  <div></div>
+  <button id="next-btn" onclick="S.goNext()" class="primary" style="display: none;">Næste →</button>
+</nav>
+
+<script>
+const accounts = {{ accounts | tojson }};
+const sourceCountry = "{{ source_country }}";
+
+const S = {
+  step: 0,
+  altIdx: 0, linkIdx: 0, numIdx: 0,
+
+  templateName: "{{ template_name }}",
+  translatedHtml: {}, images: [], altSuggestions: {}, links: [],
+  linkSuggestions: {}, numbers: [],
+
+  markedImages: new Set(),
+  imageReplacements: {}, altValues: {}, linkValues: {}, numberValues: {},
+
+  skipSteps: new Set(),
+
+  init() {
+    this.startSSE();
+    this.updateBreadcrumb();
+  },
+
+  startSSE() {
+    const log = document.getElementById('loading-log');
+    const es = new EventSource('/api/start');
+    es.addEventListener('message', (e) => {
+      try {
+        const d = JSON.parse(e.data);
+        if (d.type === 'done') {
+          const data = d.data;
+          this.translatedHtml = data.translated_html || {};
+          this.images = data.images || [];
+          this.altSuggestions = data.alt_suggestions || {};
+          this.links = data.links || {};
+          this.linkSuggestions = data.link_suggestions || {};
+          this.numbers = data.numbers || [];
+
+          // Determine which steps to skip
+          if (!this.images.some(img => img.alt)) this.skipSteps.add(2);
+          if (!this.links || this.links.length === 0) this.skipSteps.add(3);
+          if (!this.numbers || this.numbers.length === 0) this.skipSteps.add(4);
+
+          // Initialize values
+          this.images.forEach(img => { this.altValues[img.id] = {}; });
+          this.links.forEach(link => { this.linkValues[link.id] = {}; });
+          this.numbers.forEach(num => { this.numberValues[num.id] = {}; });
+          accounts.forEach(acc => {
+            this.images.forEach(img => this.altValues[img.id][acc.country] = this.altSuggestions[img.id]?.[acc.country] || '');
+            this.links.forEach(link => this.linkValues[link.id][acc.country] = this.linkSuggestions[link.id]?.[acc.country] || '');
+            this.numbers.forEach(num => this.numberValues[num.id][acc.country] = '');
+            this.imageReplacements[acc.country] = {};
+          });
+
+          es.close();
+          this.goToStep(1);
+          this.renderStep1();
+        } else {
+          const cls = `log-${d.type}`;
+          log.innerHTML += `<div class="log-line ${cls}">${d.message}</div>`;
+          log.scrollTop = log.scrollHeight;
+        }
+      } catch (err) {}
+    });
+  },
+
+  renderStep1() {
+    const grid = document.getElementById('images-grid');
+    grid.innerHTML = '';
+    this.images.forEach(img => {
+      const marked = this.markedImages.has(img.id);
+      const card = document.createElement('div');
+      card.className = 'image-card';
+      card.innerHTML = `
+        <img src="${img.src}" class="image-thumb" />
+        <div class="image-info">
+          <div class="image-src">${img.src.split('/').pop()}</div>
+          ${img.alt ? `<div class="image-alt">Alt: ${img.alt}</div>` : ''}
+        </div>
+        <input type="checkbox" ${marked ? 'checked' : ''} onchange="S.toggleImage('${img.id}')" />
+      `;
+      if (marked) {
+        const zone = document.createElement('div');
+        zone.className = 'upload-zone';
+        zone.innerHTML = `
+          <div class="upload-hint">Træk filer her (f.eks. billede-SE.jpg, billede-NO.jpg)</div>
+          <div class="country-chips" id="chips-${img.id}"></div>
+        `;
+        zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('dragover'); });
+        zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+        zone.addEventListener('drop', (e) => {
+          e.preventDefault();
+          zone.classList.remove('dragover');
+          this.handleFilesDrop(e.dataTransfer.files, img.id);
+        });
+        zone.addEventListener('click', () => {
+          const inp = document.createElement('input');
+          inp.type = 'file'; inp.multiple = true;
+          inp.onchange = (e) => this.handleFilesDrop(e.target.files, img.id);
+          inp.click();
+        });
+        card.appendChild(zone);
+        this.renderChips(img.id);
+      }
+      grid.appendChild(card);
+    });
+  },
+
+  toggleImage(imgId) {
+    if (this.markedImages.has(imgId)) {
+      this.markedImages.delete(imgId);
+    } else {
+      this.markedImages.add(imgId);
+    }
+    this.renderStep1();
+  },
+
+  handleFilesDrop(files, imgId) {
+    Array.from(files).forEach(file => {
+      const m = file.name.match(/[-_]([A-Z]{2,3})\.\w+$/i);
+      if (!m) return;
+      const cc = m[1].toUpperCase();
+      const acc = accounts.find(a => a.country === cc);
+      if (!acc) return;
+
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('img_id', imgId);
+      fd.append('country', cc);
+
+      fetch('/api/upload-image', { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(d => {
+          this.imageReplacements[cc][imgId] = d.cdn_url;
+          this.renderChips(imgId);
+        })
+        .catch(() => { this.renderChips(imgId); });
+    });
+  },
+
+  renderChips(imgId) {
+    const container = document.getElementById(`chips-${imgId}`);
+    if (!container) return;
+    container.innerHTML = '';
+    accounts.forEach(acc => {
+      const chip = document.createElement('div');
+      chip.className = 'country-chip';
+      if (this.imageReplacements[acc.country]?.[imgId]) {
+        chip.classList.add('done');
+        chip.innerHTML = `<span class="review-flag">${acc.flag || '🌍'}</span> ${acc.country} ✓`;
+      } else {
+        chip.innerHTML = `<span class="review-flag">${acc.flag || '🌍'}</span> ${acc.country}`;
+      }
+      container.appendChild(chip);
+    });
+  },
+
+  renderStep2() {
+    const container = document.getElementById('alt-container');
+    const imgsWithAlt = this.images.filter(img => img.alt);
+    const img = imgsWithAlt[this.altIdx];
+    if (!img) return;
+
+    document.getElementById('alt-idx').textContent = this.altIdx + 1;
+    document.getElementById('alt-count').textContent = imgsWithAlt.length;
+
+    container.innerHTML = `
+      <div class="review-item-title">${img.src.split('/').pop()}</div>
+      <div class="review-item-original">Original (${sourceCountry}): ${img.alt}</div>
+      <div class="review-rows" id="alt-rows"></div>
+    `;
+
+    const rows = document.getElementById('alt-rows');
+    accounts.forEach(acc => {
+      const row = document.createElement('div');
+      row.className = 'review-row';
+      const val = this.altValues[img.id][acc.country] || '';
+      const isSuggestion = val === (this.altSuggestions[img.id]?.[acc.country] || '');
+      row.innerHTML = `
+        <div class="review-label">
+          <span class="review-flag">${acc.flag || '🌍'}</span>
+          <span>${acc.language}</span>
+        </div>
+        <input type="text" class="review-input" value="${val}"
+               onchange="S.setAlt('${img.id}', '${acc.country}', this.value)"
+               onkeyup="S.setAlt('${img.id}', '${acc.country}', this.value)" />
+        ${isSuggestion ? '<div class="review-badge">AI ✦</div>' : ''}
+      `;
+      rows.appendChild(row);
+    });
+  },
+
+  setAlt(imgId, cc, val) {
+    this.altValues[imgId][cc] = val;
+  },
+
+  goAltAll() {
+    const imgsWithAlt = this.images.filter(img => img.alt);
+    imgsWithAlt.forEach(img => {
+      accounts.forEach(acc => {
+        this.altValues[img.id][acc.country] = this.altSuggestions[img.id]?.[acc.country] || '';
+      });
+    });
+    this.renderStep2();
+  },
+
+  renderStep3() {
+    const container = document.getElementById('link-container');
+    const link = this.links[this.linkIdx];
+    if (!link) return;
+
+    document.getElementById('link-idx').textContent = this.linkIdx + 1;
+    document.getElementById('link-count').textContent = this.links.length;
+
+    container.innerHTML = `
+      <div class="review-item-title">"${link.text}"</div>
+      <div class="review-item-original"><code style="color: var(--muted);">${link.href.substring(0, 70)}${link.href.length > 70 ? '…' : ''}</code></div>
+      <div class="review-rows" id="link-rows"></div>
+    `;
+
+    const rows = document.getElementById('link-rows');
+    accounts.forEach(acc => {
+      const row = document.createElement('div');
+      row.className = 'review-row';
+      const val = this.linkValues[link.id][acc.country] || '';
+      const suggested = this.linkSuggestions[link.id]?.[acc.country] || '';
+      const isDiff = val !== suggested;
+      row.innerHTML = `
+        <div class="review-label">
+          <span class="review-flag">${acc.flag || '🌍'}</span>
+          <span>${acc.language}</span>
+        </div>
+        <input type="text" class="review-input" value="${val || suggested}"
+               onchange="S.setLink('${link.id}', '${acc.country}', this.value)"
+               onkeyup="S.setLink('${link.id}', '${acc.country}', this.value)" />
+        ${isDiff ? '<div class="review-badge">→ auto</div>' : ''}
+      `;
+      rows.appendChild(row);
+    });
+  },
+
+  setLink(linkId, cc, val) {
+    this.linkValues[linkId][cc] = val;
+  },
+
+  renderStep4() {
+    const container = document.getElementById('num-container');
+    const num = this.numbers[this.numIdx];
+    if (!num) return;
+
+    document.getElementById('num-idx').textContent = this.numIdx + 1;
+    document.getElementById('num-count').textContent = this.numbers.length;
+
+    container.innerHTML = `
+      <div class="review-item-title">Værdi</div>
+      <div class="review-item-original" style="font-style: italic;">…${num.context}…</div>
+      <div class="review-rows" id="num-rows"></div>
+    `;
+
+    const rows = document.getElementById('num-rows');
+    accounts.forEach(acc => {
+      const row = document.createElement('div');
+      row.className = 'review-row';
+      const val = this.numberValues[num.id][acc.country] || '';
+      row.innerHTML = `
+        <div class="review-label">
+          <span class="review-flag">${acc.flag || '🌍'}</span>
+          <span>${acc.language}</span>
+        </div>
+        <input type="text" class="review-input" value="${val || num.original}" style="width: 140px;"
+               onchange="S.setNum('${num.id}', '${acc.country}', this.value)"
+               onkeyup="S.setNum('${num.id}', '${acc.country}', this.value)" />
+      `;
+      rows.appendChild(row);
+    });
+  },
+
+  setNum(numId, cc, val) {
+    this.numberValues[numId][cc] = val;
+  },
+
+  renderStep5() {
+    const list = document.getElementById('summary-list');
+    list.innerHTML = '';
+
+    const summaryItems = [
+      { label: `${this.images.length} billeder analyseret`, cond: true },
+      { label: `${this.markedImages.size} billeder markeret til udskiftning`, cond: this.markedImages.size > 0 },
+      { label: `${this.images.filter(i => i.alt).length} alt-tekster gennemgået`, cond: this.images.some(i => i.alt) },
+      { label: `${this.links.length} links gennemgået`, cond: this.links.length > 0 },
+      { label: `${this.numbers.length} tal/priser gennemgået`, cond: this.numbers.length > 0 },
+    ];
+
+    summaryItems.filter(s => s.cond).forEach(s => {
+      const li = document.createElement('li');
+      li.className = 'summary-item';
+      li.textContent = s.label;
+      list.appendChild(li);
+    });
+  },
+
+  startFinalize() {
+    const btn = document.getElementById('create-btn');
+    btn.disabled = true;
+    btn.textContent = 'Opretter…';
+
+    const payload = {
+      template_name: this.templateName,
+      translated_html: this.translatedHtml,
+      images: this.images,
+      links: this.links,
+      numbers: this.numbers,
+      alt_overrides: this.mapByCountry('altValues', 'src'),
+      link_overrides: this.mapByCountry('linkValues', 'href'),
+      number_overrides: this.mapByCountry('numberValues', 'original'),
+      image_replacements: this.imageReplacements,
+    };
+
+    fetch('/api/finalize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+      .then(r => r.json())
+      .then(d => this.watchFinalize(d.job_id));
+  },
+
+  mapByCountry(overrideKey, idKey) {
+    const result = {};
+    accounts.forEach(acc => {
+      result[acc.country] = {};
+      const source = this[overrideKey];
+      for (const [id, byCountry] of Object.entries(source)) {
+        result[acc.country][id] = byCountry[acc.country];
+      }
+    });
+    return result;
+  },
+
+  watchFinalize(jobId) {
+    const log = document.getElementById('finalize-log');
+    log.className = 'loading-log';
+    log.innerHTML = '';
+
+    const es = new EventSource(`/api/finalize/${jobId}/stream`);
+    es.addEventListener('message', (e) => {
+      try {
+        const d = JSON.parse(e.data);
+        const cls = `log-${d.type}`;
+        log.innerHTML += `<div class="log-line ${cls}">${d.message}</div>`;
+        log.scrollTop = log.scrollHeight;
+        if (d.type === 'done') es.close();
+      } catch (err) {}
+    });
+  },
+
+  goToStep(n) {
+    // Skip empty steps
+    while (this.skipSteps.has(n) && n < 5) n++;
+
+    document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+    document.getElementById(`step-${n}`).classList.add('active');
+
+    if (n === 1) this.renderStep1();
+    else if (n === 2) this.renderStep2();
+    else if (n === 3) this.renderStep3();
+    else if (n === 4) this.renderStep4();
+    else if (n === 5) this.renderStep5();
+
+    this.step = n;
+    this.updateNav();
+    this.updateBreadcrumb();
+  },
+
+  goNext() {
+    if (this.step === 0) return;
+    if (this.step === 1) {
+      this.goToStep(2);
+    } else if (this.step === 2) {
+      const imgsWithAlt = this.images.filter(img => img.alt);
+      if (this.altIdx < imgsWithAlt.length - 1) {
+        this.altIdx++;
+        this.renderStep2();
+      } else {
+        this.goToStep(3);
+      }
+    } else if (this.step === 3) {
+      if (this.linkIdx < this.links.length - 1) {
+        this.linkIdx++;
+        this.renderStep3();
+      } else {
+        this.goToStep(4);
+      }
+    } else if (this.step === 4) {
+      if (this.numIdx < this.numbers.length - 1) {
+        this.numIdx++;
+        this.renderStep4();
+      } else {
+        this.goToStep(5);
+      }
+    }
+  },
+
+  goBack() {
+    if (this.step === 1) {
+      window.location.href = '/';
+    } else if (this.step === 2) {
+      if (this.altIdx > 0) {
+        this.altIdx--;
+        this.renderStep2();
+      } else {
+        this.goToStep(1);
+      }
+    } else if (this.step === 3) {
+      if (this.linkIdx > 0) {
+        this.linkIdx--;
+        this.renderStep3();
+      } else {
+        this.goToStep(2);
+      }
+    } else if (this.step === 4) {
+      if (this.numIdx > 0) {
+        this.numIdx--;
+        this.renderStep4();
+      } else {
+        this.goToStep(3);
+      }
+    } else if (this.step === 5) {
+      this.goToStep(4);
+    }
+  },
+
+  updateNav() {
+    const backBtn = document.getElementById('back-btn');
+    const nextBtn = document.getElementById('next-btn');
+
+    backBtn.style.display = this.step === 0 ? 'none' : 'block';
+    nextBtn.style.display = this.step === 0 ? 'none' : 'block';
+
+    if (this.step === 5) nextBtn.style.display = 'none';
+  },
+
+  updateBreadcrumb() {
+    const bc = document.getElementById('breadcrumb');
+    bc.innerHTML = '';
+    const steps = ['Billeder', 'Alt tekster', 'Links', 'Tal', 'Gem'];
+    steps.forEach((name, idx) => {
+      if (this.skipSteps.has(idx + 1)) return;
+      const chip = document.createElement('div');
+      chip.className = 'step-chip';
+      chip.setAttribute('data-num', idx + 1);
+      chip.textContent = name;
+      if (this.step === idx + 1) chip.classList.add('active');
+      if (this.step > idx + 1) chip.classList.add('done');
+      bc.appendChild(chip);
+    });
+  },
+};
+
+window.addEventListener('load', () => {
+  // POST to /api/start to trigger server-side translation
+  fetch('/api/start', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ template_name: S.templateName }),
+  });
+  S.init();
+});
+</script>
+
+</body>
+</html>
