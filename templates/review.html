@@ -269,13 +269,29 @@ const S = {
     this.updateBreadcrumb();
   },
 
-  startSSE() {
+ startSSE() {
     const log = document.getElementById('loading-log');
-    const es = new EventSource('/api/start');
-    es.addEventListener('message', (e) => {
-      try {
-        const d = JSON.parse(e.data);
-        if (d.type === 'done') {
+    let buffer = '';
+
+    fetch('/api/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ template_name: this.templateName }),
+    }).then(response => {
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+
+      const pump = () => reader.read().then(({ done, value }) => {
+        if (done) return;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const d = JSON.parse(line.slice(6));
+            if (d.type === 'done') {
           const data = d.data;
           this.translatedHtml = data.translated_html || {};
           this.images = data.images || [];
@@ -706,12 +722,6 @@ const S = {
 };
 
 window.addEventListener('load', () => {
-  // POST to /api/start to trigger server-side translation
-  fetch('/api/start', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ template_name: S.templateName }),
-  });
   S.init();
 });
 </script>
