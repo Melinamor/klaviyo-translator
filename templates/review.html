@@ -255,7 +255,7 @@ const S = {
   step: 0,
   altIdx: 0, linkIdx: 0, numIdx: 0,
 
-  templateName: "{{ template_name }}",
+  templateName: {{ template_name | tojson }},
   translatedHtml: {}, images: [], altSuggestions: {}, links: [],
   linkSuggestions: {}, numbers: [],
 
