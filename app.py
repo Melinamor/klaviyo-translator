@@ -160,35 +160,64 @@ def parse_elements(html):
 # Translation
 # ──────────────────────────────────────────────
 
-def _batch_translate(texts, src, tgt, client):
+def _batch_translate_multilang(texts, src, accounts, client):
+    """Translate texts from src to ALL target languages in one API call."""
+    country_list = [f"{a['language']} ({a['country']})" for a in accounts]
+    keys = [a['country'] for a in accounts]
     prompt = (
-        f"Translate from {src} to {tgt} for a marketing email.\n"
-        "Return ONLY a JSON array with translations in the same order.\n"
-        "Keep Klaviyo variables ({{name}}, {% if %} etc.), URLs, and brand names unchanged.\n\n"
+        f"Translate these {len(texts)} marketing email texts from {src} to ALL these languages: "
+        + ", ".join(country_list) + ".\n"
+        "Return ONLY a JSON object where keys are country codes and values are arrays "
+        "of translations in the same order as the input.\n"
+        f"Required keys: {keys}\n"
+        "Keep Klaviyo variables ({{name}}, {{% if %}} etc.), URLs, and brand names unchanged.\n\n"
         + json.dumps(texts, ensure_ascii=False)
     )
     msg = client.messages.create(
-        model="claude-opus-4-6", max_tokens=4096,
+        model="claude-haiku-4-5-20251001", max_tokens=8192,
         messages=[{"role": "user", "content": prompt}],
     )
     raw = msg.content[0].text.strip()
-    m = re.search(r"\[.*\]", raw, re.DOTALL)
+    m = re.search(r"\{.*\}", raw, re.DOTALL)
     if not m:
         raise ValueError(f"Unexpected response: {raw[:120]}")
     result = json.loads(m.group())
-    if len(result) != len(texts):
-        raise ValueError(f"Count mismatch: sent {len(texts)}, got {len(result)}")
-    return result
+    # Ensure all countries present and correct length
+    for acc in accounts:
+        cc = acc["country"]
+        if cc not in result or len(result[cc]) != len(texts):
+            result[cc] = texts  # fallback to source
+    return result  # {country_code: [translated_texts]}
 
-def translate_html(html, src_lang, tgt_lang, client, chunk=40):
-    soup = BeautifulSoup(html, "html.parser")
-    nodes = _text_nodes(soup)
-    for i in range(0, len(nodes), chunk):
-        ch = nodes[i:i + chunk]
-        translated = _batch_translate([str(n) for n in ch], src_lang, tgt_lang, client)
-        for node, new_text in zip(ch, translated):
-            node.replace_with(NavigableString(new_text))
-    return str(soup)
+def translate_html_multilang(html, src_lang, accounts, client, chunk=15):
+    """Generator: translates HTML to all languages at once per batch.
+    Yields ('progress', done, total) then ('done', {country: html})."""
+    soup_src = BeautifulSoup(html, "html.parser")
+    src_nodes = _text_nodes(soup_src)
+    total = len(src_nodes)
+
+    # Create one soup per country
+    country_soups = {a["country"]: BeautifulSoup(html, "html.parser") for a in accounts}
+    country_nodes = {a["country"]: _text_nodes(country_soups[a["country"]]) for a in accounts}
+
+    total_chunks = max(1, (total + chunk - 1) // chunk)
+
+    for ci, i in enumerate(range(0, total, chunk)):
+        ch_texts = [str(n) for n in src_nodes[i:i + chunk]]
+        try:
+            translations = _batch_translate_multilang(ch_texts, src_lang, accounts, client)
+        except Exception:
+            translations = {a["country"]: ch_texts for a in accounts}
+
+        for acc in accounts:
+            cc = acc["country"]
+            for node, new_text in zip(country_nodes[cc][i:i + chunk],
+                                      translations.get(cc, ch_texts)):
+                node.replace_with(NavigableString(new_text))
+
+        yield ("progress", ci + 1, total_chunks)
+
+    yield ("done", {a["country"]: str(country_soups[a["country"]]) for a in accounts})
 
 # ──────────────────────────────────────────────
 # Suggestions
@@ -336,16 +365,19 @@ def api_start():
         if not source_html:
             yield sse("error", "Template er tom."); return
 
-        yield sse("progress", f"Template fundet ({len(source_html):,} tegn). Oversætter…")
+        yield sse("progress", f"Template fundet ({len(source_html):,} tegn). Oversætter til {len(ACCOUNTS)} sprog…")
 
         translated = {}
-        for i, acc in enumerate(ACCOUNTS, 1):
-            yield sse("progress", f"[{i}/{len(ACCOUNTS)}] {acc['language']} ({acc['country']})…")
-            try:
-                translated[acc["country"]] = translate_html(
-                    source_html, SOURCE_LANGUAGE, acc["language"], client)
-            except Exception as e:
-                yield sse("warning", f"Fejl {acc['country']}: {e}")
+        try:
+            for event in translate_html_multilang(source_html, SOURCE_LANGUAGE, ACCOUNTS, client):
+                if event[0] == "progress":
+                    _, done, total_chunks = event
+                    yield sse("progress", f"Batch {done}/{total_chunks} — alle {len(ACCOUNTS)} sprog…")
+                elif event[0] == "done":
+                    translated = event[1]
+        except Exception as e:
+            yield sse("warning", f"Oversættelsesfejl: {e}")
+            for acc in ACCOUNTS:
                 translated[acc["country"]] = source_html
 
         yield sse("progress", "Analyserer billeder, links og tal…")
